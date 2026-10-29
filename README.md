@@ -1,160 +1,68 @@
 # teamfinder-frontend
 
-Клиентское приложение TeamFinder — сервиса поиска участников и формирования команд для
-pet-проектов, хакатонов и учебных проектов.
+Клиентское приложение TeamFinder: React 18, React Router 6, Vite 5, JavaScript.
+Экраны — по `ui-design.md`, запросы — по `api-contracts-v1.md` (оба в `teamfinder-docs`).
 
-Это каркас первой версии: заведены маршруты под все экраны из `ui-design.md`, настроено
-обращение к backend и обработаны состояния загрузки, ошибки и пустого результата.
+## Что работает (MVP, checkpoint 3)
 
-Стек: React 18, React Router 6, Vite 5. Язык — JavaScript.
+| Маршрут | Экран | Запросы к API |
+|---|---|---|
+| `/login` | S-01 Вход и регистрация | `POST /api/auth/login`, `register` |
+| `/catalog` | S-03 Каталог с фильтрами и страницами (по 10 проектов) | `GET /api/projects?q=&type=&roleTypeId=&skillId=&openOnly=&page=` |
+| `/projects/new` | S-05 **Создание проекта сразу с ролями и навыками** | один `POST /api/projects` |
+| `/projects/:id` | S-04 Проект, matching по каждой роли, **модалка отклика S-04a** | `GET /api/projects/{id}`, `.../roles/{roleId}/match`, `POST .../applications` |
+| `/projects/:id/edit` | S-05 Редактирование, смена состояния, добавление роли | `PATCH /api/projects/{id}`, `POST .../publish|start|complete|cancel`, `POST .../roles` |
+| `/projects/:id/roles/:roleId/edit` | S-06 Роль: блокировка навыков после заявок, закрыть, удалить | `PATCH`, `POST .../close`, `DELETE` |
+| `/projects/:id/applications` | S-07 Заявки проекта (владелец): принять, отклонить | `GET /api/projects/{id}/applications`, `POST /api/applications/{id}/accept|reject` |
+| `/applications` | S-07 Мои заявки: статус, причина закрытия, отзыв | `GET /api/applications/mine`, `POST .../withdraw` |
+| `/projects/:id/team` | S-08 Команда: контакт, выход, исключение | `GET .../team`, `POST .../team/leave`, `DELETE .../members/{userId}` |
+| `/projects/mine` | S-10 Мои проекты, у владельца число новых заявок | `GET /api/projects/mine` |
+| `/profile` | S-02 Профиль, интересы, навыки, подключение Telegram | `GET/PUT /api/profile`, `/api/profile/telegram` |
+| колокольчик в шапке | S-09 Уведомления | `GET /api/notifications`, `POST .../{id}/read`, `POST .../read-all` |
 
----
+## Как устроен вход
 
-## Требования
+`src/api/client.js`, решение — `teamfinder-docs/adr-001-authentication.md`:
 
-- Node.js 18 или новее (проверить: `node -v`)
-- npm 9 или новее (идёт вместе с Node.js)
-
-Запущенный backend нужен не для старта приложения, а для того, чтобы запросы к нему
-возвращали данные. Без backend фронтенд поднимется и покажет состояние ошибки — это
-штатное поведение.
+- **access token** (JWT, 15 минут) хранится только в памяти — переменная в `client.js`, не `localStorage`, поэтому чужой скрипт на странице не может его прочитать из хранилища;
+- **refresh token** приходит в HttpOnly-cookie `tf_refresh`. JS его не видит, браузер отправляет его только на `/api/auth/*`;
+- при ответе `401` клиент один раз вызывает `POST /api/auth/refresh` и повторяет запрос. Если несколько запросов получили `401` одновременно, они ждут одно общее обновление;
+- при открытии страницы `AuthProvider` вызывает `refresh` — так вход сохраняется после перезагрузки.
 
 ## Запуск
 
 ```bash
 npm install
-npm run dev
+npm run dev        # http://localhost:5173
 ```
 
-Приложение откроется на <http://localhost:5173>.
+Нужен запущенный backend (`teamfinder-backend`, `dotnet run` → `http://localhost:5017`). Vite проксирует `/api` на него, поэтому браузер видит один origin: CORS не нужен, cookie `SameSite=Strict` работает.
 
-Другие команды:
+Весь проект (frontend + backend + PostgreSQL) можно поднять одной командой из папки `teamfinder-backend`: `docker compose up -d --build`, сайт будет на `http://localhost:8081`. Frontend собирается `Dockerfile` из этого репозитория, nginx (`nginx.conf`) отдаёт статику и пересылает `/api` в backend.
 
-```bash
-npm run build     # production-сборка в папку dist
-npm run preview   # посмотреть собранную версию
-```
-
-## Настройка адреса backend
-
-Скопируйте пример конфигурации и при необходимости поправьте:
-
-```bash
-cp .env.example .env
-```
-
-| Переменная | Значение по умолчанию | Назначение |
+| Переменная | По умолчанию | Назначение |
 |---|---|---|
-| `VITE_API_PROXY_TARGET` | `http://localhost:5017` | Адрес backend, куда dev-сервер проксирует запросы |
-| `VITE_API_BASE_URL` | пусто | Префикс запросов из кода. Пустой — значит идти через прокси |
+| `VITE_API_PROXY_TARGET` | `http://localhost:5017` | Куда dev-сервер проксирует `/api` (для Docker — `http://localhost:8080`) |
+| `VITE_API_BASE_URL` | пусто | Префикс запросов; пусто — через прокси |
 
-Порт `5017` — это профиль `http` из `launchSettings.json` в репозитории `teamfinder-backend`.
-Если backend поднят в Docker, укажите `http://localhost:8080`.
+## Структура
 
-### Почему запросы идут через прокси
-
-Dev-сервер Vite перенаправляет `/api` и `/health` на backend (см. `vite.config.js`).
-Браузер при этом считает их запросами на свой же origin, поэтому CORS на стороне backend
-настраивать не требуется. Когда на backend появится конфигурация CORS, можно будет
-обращаться к нему напрямую — для этого достаточно указать полный адрес в `VITE_API_BASE_URL`.
-
-## Что уже работает
-
-| Что | Запрос | Состояние |
-|---|---|---|
-| Доступность сервера на главной | `GET /health` | Работает — эндпоинт есть в каркасе backend |
-| Справочник навыков, страница «Навыки» | `GET /api/skills` | Эндпоинта пока нет, экран показывает состояние ошибки |
-
-`/health` — это сквозная проверка frontend → backend: при запущенном сервере на главной
-появляется «Сервер доступен».
-
-Запросы соответствуют `api-contracts-v1.md` из репозитория `teamfinder-docs`: префикс `/api`,
-формат JSON. Справочник навыков — раздел 6.1 контракта:
-
-```
-GET /api/skills
-200 OK
-[
-  { "id": 1, "name": "C#" },
-  { "id": 2, "name": "ASP.NET Core" },
-  { "id": 3, "name": "PostgreSQL" }
-]
-```
-
-Эндпоинт появится в backend после задачи B2 — миграции EF Core и справочные данные.
-По контракту он доступен только авторизованным пользователям, поэтому до появления входа
-в систему backend будет отвечать `401`, и экран покажет «Требуется вход в систему».
-
-## Состояния загрузки, ошибки и пустого результата
-
-Требование FR-UX-03: каждый экран со списком обрабатывает три состояния. Логика собрана
-в двух местах и переиспользуется:
-
-- `src/hooks/useApi.js` — выполняет запрос и отдаёт одно из четырёх состояний:
-  `loading`, `error`, `empty` (пустой массив) или `ready`;
-- `src/components/RequestState.jsx` — рисует загрузку, ошибку с кнопкой «Повторить»
-  и пустой результат.
-
-Проверить состояния можно так:
-
-- **loading** — видно в момент открытия страницы «Навыки»;
-- **error** — откройте «Навыки» при незапущенном backend или до появления `/api/skills`;
-- **empty** — появится, когда backend вернёт пустой массив.
-
-Ошибки backend возвращает в формате из раздела 2.5 контракта:
-
-```json
-{ "code": "ROLE_IS_FULL", "message": "Описание ошибки" }
-```
-
-Клиент показывает пользователю `message` от сервера, а `code` сохраняет в объекте ошибки
-(`error.code`), чтобы экраны могли реагировать на конкретное бизнес-правило. Для
-`VALIDATION_ERROR` ошибки по полям доступны в `error.errors`.
-
-## Структура проекта
-
-```
+```text
 src/
-  api/client.js            обращения к backend, разбор ошибок
-  hooks/useApi.js          загрузка данных и состояния запроса
-  components/
-    Layout.jsx             шапка и меню
-    ServerStatus.jsx       доступность сервера (GET /health)
-    RequestState.jsx       loading / error / empty
-  pages/
-    HomePage.jsx           главная со списком разделов
-    SkillsPage.jsx         справочник навыков — рабочий запрос
-    StubPage.jsx           заглушка раздела: описание и сценарии UC
-    NotFoundPage.jsx       неизвестный маршрут
-    screens.js             разделы, их сценарии; из него строятся маршруты
-  App.jsx                  маршруты
-  main.jsx                 точка входа
-  styles.css               стили, палитра из вайрфреймов
+  api/client.js        fetch, токены, обновление по 401, формат ошибок {code, message, errors}
+  api/endpoints.js     по функции на каждый endpoint контракта, который нужен экранам
+  auth/AuthContext.jsx сессия пользователя, RequireAuth
+  components/          Layout, уведомления, MatchBlock, RoleFields (форма роли), Modal, бейджи,
+                       ConfirmProvider (окна подтверждения), TelegramBlock (Telegram в профиле)
+  hooks/useApi.js      состояния loading / error / empty / ready (FR-UX-03)
+  pages/               экраны S-01 … S-10
+  labels.js            подписи для значений перечислений API
 ```
 
-## Маршруты
+## Правила интерфейса
 
-Соответствуют экранам из `ui-design.md` репозитория `teamfinder-docs`.
-
-| Маршрут | Экран | Состояние | Сценарии |
-|---|---|---|---|
-| `/` | — | Список экранов | — |
-| `/skills` | — | Рабочий запрос к backend | — |
-| `/login` | S-01 | Заглушка | UC-01, UC-02 |
-| `/profile` | S-02 | Заглушка | UC-03 |
-| `/catalog` | S-03 | Заглушка | UC-06 |
-| `/projects/:id` | S-04 | Заглушка | UC-07, UC-08 |
-| `/projects` | S-05 | Заглушка | UC-04, UC-15, UC-16 |
-| `/projects/:id/roles/:roleId` | S-06 | Заглушка | UC-05 |
-| `/applications` | S-07 | Заглушка | UC-09 … UC-12 |
-| `/team/:id` | S-08 | Заглушка | UC-13, UC-14 |
-
-## Связанные документы
-
-Находятся в репозитории `teamfinder-docs`:
-
-- `ui-design.md` — состав экранов, карта переходов, соответствие сценариям
-- `use-cases.md` — сценарии UC-01 … UC-16
-- `business-rules.md` — бизнес-правила и коды ошибок
-- `architecture-v1.md` — общая архитектура системы
-- `api-contracts-v1.md` — контракты API
+- Ошибка API показывается текстом `message` с сервера (FR-UX-04). Ошибки полей (`errors`) — под нужным полем, включая поля внутри роли: `roles[1].capacity`.
+- Недоступная кнопка отключается с подписью-причиной («Мест нет», «Набор закрыт»), но проверка всегда делается на сервере (FR-UX-02).
+- Заполненность роли везде в формате «занято / всего» (FR-ROLE-07).
+- Необратимые действия (принять, исключить, выйти, отозвать, перевести проект в работу, отменить, закрыть роль) подтверждаются своим окном `ConfirmProvider` в стиле приложения, а не стандартным `window.confirm`.
+- Для показа можно войти демо-пользователем: `ivan@demo.local` / `petr@demo.local` / `anna@demo.local` / `maria@demo.local`, пароль `Demo12345!` (backend создаёт их в режиме разработки). Сценарий — `teamfinder-docs/demo-guide.md`.
