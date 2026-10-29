@@ -1,0 +1,23 @@
+# Проверка frontend на каждый PR: зависимости ставятся по package-lock.json и проект собирается.
+# Если сборка падает, PR нельзя влить (включить в настройках ветки: Require status checks → build).
+name: frontend-ci
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Docker-образ собирается
+        run: docker build -t teamfinder-frontend:ci .
