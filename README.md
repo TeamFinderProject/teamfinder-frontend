@@ -1,9 +1,13 @@
-# teamfinder-frontend
+# TeamFinder · Frontend
+
+[Организация](https://github.com/TeamFinderProject) · [Документация](https://github.com/TeamFinderProject/teamfinder-docs) · [Backend](https://github.com/TeamFinderProject/teamfinder-backend) · [Kanban](https://github.com/orgs/TeamFinderProject/projects/1)
+
+[![Frontend CI](https://github.com/TeamFinderProject/teamfinder-frontend/actions/workflows/frontend-ci.yml/badge.svg?branch=develop)](https://github.com/TeamFinderProject/teamfinder-frontend/actions/workflows/frontend-ci.yml)
 
 Клиентское приложение TeamFinder: React 18, React Router 6, Vite 5, JavaScript.
-Экраны — по `ui-design.md`, запросы — по `api-contracts-v1.md` (оба в `teamfinder-docs`).
+Экраны описаны в [UI Design](https://github.com/TeamFinderProject/teamfinder-docs/blob/develop/ui-design.md), запросы — в [API-контракте](https://github.com/TeamFinderProject/teamfinder-docs/blob/develop/api-contracts-v1.md). Основная ветка — `develop`.
 
-## Что работает (MVP, checkpoint 3)
+## Экраны и маршруты MVP
 
 | Маршрут | Экран | Запросы к API |
 |---|---|---|
@@ -24,15 +28,17 @@
 
 `src/api/client.js`, решение — `teamfinder-docs/adr-001-authentication.md`:
 
-- **access token** (JWT, 15 минут) хранится только в памяти — переменная в `client.js`, не `localStorage`, поэтому чужой скрипт на странице не может его прочитать из хранилища;
+- **access token** (JWT, 15 минут) хранится только в памяти — переменная в `client.js`, не `localStorage`, это исключает сохранение токена в localStorage, но не защищает приложение от XSS;
 - **refresh token** приходит в HttpOnly-cookie `tf_refresh`. JS его не видит, браузер отправляет его только на `/api/auth/*`;
 - при ответе `401` клиент один раз вызывает `POST /api/auth/refresh` и повторяет запрос. Если несколько запросов получили `401` одновременно, они ждут одно общее обновление;
 - при открытии страницы `AuthProvider` вызывает `refresh` — так вход сохраняется после перезагрузки.
 
 ## Запуск
 
+Для разработки нужен Node.js 22, как в CI и Dockerfile.
+
 ```bash
-npm install
+npm ci
 npm run dev        # http://localhost:5173
 ```
 
@@ -65,4 +71,4 @@ src/
 - Недоступная кнопка отключается с подписью-причиной («Мест нет», «Набор закрыт»), но проверка всегда делается на сервере (FR-UX-02).
 - Заполненность роли везде в формате «занято / всего» (FR-ROLE-07).
 - Необратимые действия (принять, исключить, выйти, отозвать, перевести проект в работу, отменить, закрыть роль) подтверждаются своим окном `ConfirmProvider` в стиле приложения, а не стандартным `window.confirm`.
-- Для показа можно войти демо-пользователем: `ivan@demo.local` / `petr@demo.local` / `anna@demo.local` / `maria@demo.local`, пароль `Demo12345!` (backend создаёт их в режиме разработки). Сценарий — `teamfinder-docs/demo-guide.md`.
+- Для показа можно войти демо-пользователем: `ivan@demo.local` / `petr@demo.local` / `anna@demo.local` / `maria@demo.local`, пароль `Demo12345!` (backend создаёт их в режиме разработки). Сценарий — [demo-guide.md](https://github.com/TeamFinderProject/teamfinder-docs/blob/develop/demo-guide.md).
